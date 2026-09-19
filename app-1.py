@@ -1,5 +1,6 @@
-import os, base64
+import os
 from io import BytesIO
+
 import streamlit as st
 from PIL import Image, ImageOps
 
@@ -7,10 +8,9 @@ st.set_page_config(
     page_title="AI Reality Scanner",
     page_icon="📸",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
-# ---------- Theme ----------
 st.markdown("""
 <style>
 [data-testid="stAppViewContainer"] {
@@ -37,44 +37,34 @@ st.markdown("""
 
 st.markdown("""
 <div class="hero">
-  <span class="badge">AI VISION • MULTI-PURPOSE</span>
+  <span class="badge">GEMINI VISION • MULTI-PURPOSE</span>
   <h1>📸 AI Reality Scanner</h1>
   <p>صوّر أي حاجة. التطبيق يحاول يفهم الصورة، يحدد نوع المحتوى، ويقدّم لك تحليلًا عمليًا.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ---------- Helpers ----------
+
 def get_secret(name):
     try:
         return st.secrets.get(name)
     except Exception:
         return None
 
+
 def local_fallback():
-    return """### 🔎 تحليل تجريبي
-تم استقبال الصورة بنجاح، لكن محرك الرؤية AI غير متصل حاليًا.
+    return """### 🔎 وضع العرض
+تم استقبال الصورة بنجاح، لكن محرك Gemini غير متصل حاليًا.
 
-**ما تم تأكيده:**
-- الصورة صالحة للعرض.
-- يمكنك تشغيل التحليل الذكي بإضافة `OPENAI_API_KEY`.
+أضف `GEMINI_API_KEY` في Streamlit Secrets ثم أعد تشغيل التطبيق."""
 
-**ماذا أستطيع أن أفعل لك؟**
-1. تحليل النصوص والمستندات.
-2. قراءة الفواتير والأرقام.
-3. شرح الأسئلة والصور التعليمية.
 
-> لا يتم اختلاق نتيجة تحليل بصري حقيقية عندما لا يكون محرك الرؤية متصلًا."""
+def analyze_with_gemini(image):
+    from google import genai
+    from google.genai import types
 
-def analyze_with_openai(image):
-    from openai import OpenAI
-    key = os.getenv("OPENAI_API_KEY") or get_secret("OPENAI_API_KEY")
+    key = os.getenv("GEMINI_API_KEY") or get_secret("GEMINI_API_KEY")
     if not key:
         return None, "missing"
-
-    client = OpenAI(api_key=key)
-    buf=BytesIO()
-    image.convert("RGB").save(buf, format="JPEG", quality=90)
-    b64=base64.b64encode(buf.getvalue()).decode()
 
     prompt = """أنت AI Reality Scanner.
 حلل الصورة بالعربية المصرية الواضحة، بدون اختلاق معلومات.
@@ -98,54 +88,82 @@ def analyze_with_openai(image):
 مهم: لا تدّعي التعرف المؤكد على هوية الأشخاص أو أماكنهم. وإذا كانت المعلومة غير واضحة قل "غير واضح"."""
 
     try:
-        r=client.responses.create(
-            model="gpt-4.1-mini",
-            input=[{"role":"user","content":[
-                {"type":"input_text","text":prompt},
-                {"type":"input_image","image_url":f"data:image/jpeg;base64,{b64}"}
-            ]}]
+        buf = BytesIO()
+        image.convert("RGB").save(buf, format="JPEG", quality=90)
+        image_part = types.Part.from_bytes(
+            data=buf.getvalue(),
+            mime_type="image/jpeg",
         )
-        return r.output_text, "ok"
-    except Exception as e:
-        return f"تعذر إكمال التحليل حاليًا.\n\nتفاصيل تقنية: `{str(e)[:300]}`", "error"
 
-# ---------- Upload ----------
+        client = genai.Client(api_key=key)
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=[prompt, image_part],
+        )
+
+        text = getattr(response, "text", None)
+        if not text:
+            return "لم يرجع Gemini نصًا للتحليل.", "error"
+
+        return text, "ok"
+
+    except Exception as e:
+        return (
+            f"تعذر إكمال التحليل حاليًا.\n\n"
+            f"تفاصيل تقنية: `{str(e)[:500]}`",
+            "error",
+        )
+
+
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.subheader("📤 1. اختار صورة")
-uploaded=st.file_uploader(
+uploaded = st.file_uploader(
     "ارفع JPG / PNG / WEBP",
-    type=["jpg","jpeg","png","webp"],
-    label_visibility="collapsed"
+    type=["jpg", "jpeg", "png", "webp"],
+    label_visibility="collapsed",
 )
-st.markdown('<p class="small">يفضل صورة واضحة وبإضاءة جيدة للحصول على نتائج أفضل.</p></div>', unsafe_allow_html=True)
+st.markdown(
+    '<p class="small">يفضل صورة واضحة وبإضاءة جيدة للحصول على نتائج أفضل.</p></div>',
+    unsafe_allow_html=True,
+)
 
 if uploaded:
-    image=Image.open(uploaded)
-    image=ImageOps.exif_transpose(image)
+    image = Image.open(uploaded)
+    image = ImageOps.exif_transpose(image)
 
-    left,right=st.columns([1,1], gap="large")
+    left, right = st.columns([1, 1], gap="large")
+
     with left:
-        st.image(image, caption="الصورة", use_container_width=True)
+        st.image(image, caption="الصورة", width="stretch")
 
     with right:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("⚡ 2. ابدأ التحليل")
         st.write("سيختار التطبيق أسلوب التحليل المناسب تلقائيًا.")
-        analyze=st.button("🔎 حلّل الصورة الآن", type="primary", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        analyze = st.button(
+            "🔎 حلّل الصورة الآن",
+            type="primary",
+            width="stretch",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
         if analyze:
-            with st.spinner("🤖 جاري تحليل الصورة..."):
-                result,status=analyze_with_openai(image)
+            with st.spinner("🤖 جاري تحليل الصورة باستخدام Gemini..."):
+                result, status = analyze_with_gemini(image)
 
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("🧠 النتيجة")
-            if status=="missing":
-                st.warning("محرك AI غير متصل. هذه النسخة تعمل في وضع العرض، ولتشغيل الرؤية الحقيقية أضف مفتاح OpenAI في Secrets.")
+
+            if status == "missing":
+                st.warning(
+                    "محرك Gemini غير متصل. أضف GEMINI_API_KEY في Secrets."
+                )
                 st.markdown(local_fallback())
             else:
                 st.markdown(result)
-            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
 else:
     st.markdown("""
@@ -157,6 +175,6 @@ else:
 
 st.markdown("""
 <div style="text-align:center;margin-top:40px;color:#64748b;">
-AI Reality Scanner • Built as a portfolio-ready prototype
+AI Reality Scanner • Gemini-powered portfolio prototype
 </div>
 """, unsafe_allow_html=True)
