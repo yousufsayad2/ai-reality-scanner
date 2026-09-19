@@ -10,25 +10,27 @@ from datetime import datetime
 import streamlit as st
 from PIL import Image, ImageOps
 
-# -----------------------------
-# Page
-# -----------------------------
+# ============================================================
+# AI REALITY SCANNER ULTIMATE
+# ============================================================
+
 st.set_page_config(
-    page_title="AI Reality Scanner PRO",
+    page_title="AI Reality Scanner ULTIMATE",
     page_icon="📸",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
+# -------------------- UI --------------------
 st.markdown("""
 <style>
 [data-testid="stAppViewContainer"] {
     background: radial-gradient(circle at 10% 5%, #172554 0, #080b16 32%, #05060b 72%);
 }
-.block-container {max-width:1180px;padding-top:2rem;padding-bottom:4rem;}
+.block-container {max-width:1180px;padding-top:1.5rem;padding-bottom:4rem;}
 .hero {
-    padding:34px; border-radius:28px; margin-bottom:20px;
-    background:linear-gradient(135deg,rgba(59,130,246,.18),rgba(168,85,247,.14));
+    padding:34px;border-radius:30px;margin-bottom:20px;
+    background:linear-gradient(135deg,rgba(59,130,246,.20),rgba(168,85,247,.15));
     border:1px solid rgba(255,255,255,.10);
 }
 .hero h1 {font-size:3rem;margin:0 0 8px;}
@@ -42,27 +44,20 @@ st.markdown("""
     background:rgba(59,130,246,.16);color:#93c5fd;font-size:.85rem;
 }
 .small {color:#94a3b8;font-size:.9rem;}
-.stButton>button {border-radius:14px;min-height:46px;font-weight:700;}
-div[data-testid="stFileUploader"] {
-    background:rgba(15,23,42,.5); border-radius:18px; padding:8px;
-}
+.stButton>button,.stDownloadButton>button {border-radius:14px;min-height:46px;font-weight:700;}
+div[data-testid="stFileUploader"] {background:rgba(15,23,42,.5);border-radius:18px;padding:8px;}
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# Header
-# -----------------------------
 st.markdown("""
 <div class="hero">
-<span class="badge">GEMINI VISION • PRO</span>
+<span class="badge">GEMINI VISION • ULTIMATE</span>
 <h1>📸 AI Reality Scanner</h1>
-<p>صوّر أي حاجة → الذكاء الاصطناعي يفهمها → يحللها → ويقولك تعمل إيه بعدها.</p>
+<p>صوّر أي حاجة → افهمها → حلّلها → اسأل عنها → احفظ النتيجة.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# API helpers
-# -----------------------------
+# -------------------- Gemini --------------------
 def get_api_key():
     key = os.getenv("GEMINI_API_KEY")
     if key:
@@ -80,53 +75,10 @@ def image_to_base64(image):
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def call_gemini(image, mode, language, extra_instruction):
+def gemini_request(image, prompt):
     api_key = get_api_key()
     if not api_key:
-        return None, "مفتاح Gemini غير موجود. أضف GEMINI_API_KEY في Streamlit Secrets."
-
-    prompts = {
-        "🧠 تحليل ذكي": """حلل الصورة تحليلًا شاملًا. حدد نوع الصورة، أهم العناصر، النصوص المهمة، وما الذي يمكن فعله بناءً عليها.""",
-        "📝 استخراج النص OCR": """استخرج كل النصوص التي تستطيع قراءتها من الصورة. حافظ على ترتيبها قدر الإمكان. إذا كان جزء غير واضح اكتب [غير واضح] ولا تخمّن.""",
-        "🧾 فاتورة / إيصال": """حلل الفاتورة أو الإيصال. استخرج اسم المتجر إن كان ظاهرًا، البنود، الكميات، الأسعار، الخصومات، الضرائب، والإجمالي الظاهر. لا تخترع أرقامًا.""",
-        "📄 مستند / ورقة": """اقرأ المستند، ثم لخّصه. استخرج العناوين والنقاط المهمة والأسماء والأرقام والتواريخ الظاهرة. إذا كان طويلًا، أعطِ ملخصًا منظمًا.""",
-        "💻 كود برمجي": """افهم الكود الظاهر في الصورة. اشرح وظيفته، حدد الأخطاء أو المشاكل الواضحة، ثم اقترح نسخة إصلاح أو تعديلات عملية عندما يكون ذلك ممكنًا.""",
-        "📊 رسم بياني": """حلل الرسم البياني. اذكر المحاور، الاتجاهات، القيم الواضحة، المقارنات، وأي استنتاجات مباشرة يمكن قراءتها من الرسم دون اختلاق أرقام.""",
-        "🧮 سؤال / مسألة": """حدد السؤال الموجود في الصورة وحلّه خطوة بخطوة. اكتب القوانين أو خطوات التفكير اللازمة، ثم أعطِ الإجابة النهائية بوضوح.""",
-        "🔍 فحص تفاصيل": """افحص الصورة بحثًا عن تفاصيل صغيرة مهمة: نصوص، أرقام، رموز، عناصر، أخطاء مرئية، أو تناقضات. فرّق بين المؤكد وغير الواضح.""",
-    }
-
-    selected = prompts.get(mode, prompts["🧠 تحليل ذكي"])
-
-    prompt = f"""
-أنت AI Reality Scanner PRO.
-
-اللغة المطلوبة: {language}
-نوع التحليل المطلوب: {mode}
-
-{selected}
-
-قواعد مهمة:
-- لا تخترع أي معلومة غير ظاهرة.
-- إذا لم تكن معلومة واضحة، قل "غير واضح".
-- لا تدّعِ معرفة هوية الأشخاص في الصورة.
-- لا تدّعِ تحديد الموقع الجغرافي الدقيق من مجرد مظهر الصورة.
-- اجعل النتيجة عملية ومنظمة.
-
-اكتب النتيجة بهذا الشكل:
-
-### 👁️ ماذا أرى؟
-### 🧠 التحليل
-### 📌 أهم التفاصيل
-### 🚀 ماذا أفعل الآن؟
-- اذكر 3 خطوات عملية مناسبة للصورة.
-
-### 💡 ملاحظات
-اذكر أي حدود أو أجزاء غير واضحة.
-
-تعليمات إضافية من المستخدم:
-{extra_instruction or "لا توجد تعليمات إضافية."}
-"""
+        return None, "مفتاح Gemini غير موجود في Streamlit Secrets."
 
     payload = {
         "contents": [{
@@ -135,30 +87,28 @@ def call_gemini(image, mode, language, extra_instruction):
                 {
                     "inline_data": {
                         "mime_type": "image/jpeg",
-                        "data": image_to_base64(image),
+                        "data": image_to_base64(image)
                     }
-                },
+                }
             ]
         }],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 1800,
-        },
+            "maxOutputTokens": 2200
+        }
     }
 
     model = "gemini-3.5-flash-lite"
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        + model
-        + ":generateContent?key="
-        + urllib.parse.quote(api_key, safe="")
+        + model + ":generateContent?key=" + urllib.parse.quote(api_key, safe="")
     )
 
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
-        method="POST",
+        method="POST"
     )
 
     try:
@@ -170,94 +120,122 @@ def call_gemini(image, mode, language, extra_instruction):
             return None, "Gemini لم يرجع نتيجة."
 
         parts = candidates[0].get("content", {}).get("parts", [])
-        result = "\n".join(
-            part.get("text", "") for part in parts if part.get("text")
+        text = "\n".join(
+            p.get("text", "") for p in parts if p.get("text")
         ).strip()
 
-        if not result:
-            return None, "Gemini رجع استجابة بدون نص."
-        return result, None
+        return (text or "لم يرجع Gemini نصًا."), None
 
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8", errors="replace")
         try:
-            error_data = json.loads(raw)
-            message = error_data.get("error", {}).get("message", raw)
+            obj = json.loads(raw)
+            msg = obj.get("error", {}).get("message", raw)
         except Exception:
-            message = raw
-        return None, f"Gemini رفض الطلب: {message}"
-
+            msg = raw
+        return None, f"Gemini رفض الطلب: {msg}"
     except Exception as e:
         return None, f"تعذر الاتصال بـ Gemini: {str(e)[:700]}"
 
 
-# -----------------------------
-# Sidebar settings
-# -----------------------------
+# -------------------- Analysis modes --------------------
+MODE_PROMPTS = {
+    "🧠 تحليل ذكي":
+        "حلل الصورة تحليلًا شاملًا وحدد نوع المحتوى وأهم المعلومات والاستخدامات.",
+    "📝 استخراج النص OCR":
+        "استخرج كل النص الظاهر في الصورة بدقة وحافظ على ترتيب الأسطر قدر الإمكان. اكتب [غير واضح] بدل التخمين.",
+    "🧾 فاتورة / إيصال":
+        "استخرج المتجر، البنود، الكميات، الأسعار، الخصومات، الضرائب والإجمالي الظاهر. لا تخترع أرقامًا.",
+    "📄 مستند / ورقة":
+        "اقرأ المستند، استخرج أهم البيانات والعناوين والتواريخ والأرقام، ثم لخّصه.",
+    "💻 كود برمجي":
+        "اشرح الكود، وظيفته، الأخطاء الظاهرة، ثم اقترح إصلاحات عملية أو نسخة محسنة.",
+    "📊 رسم بياني":
+        "حلل المحاور والقيم والاتجاهات والمقارنات والاستنتاجات المباشرة من الرسم.",
+    "🧮 سؤال / مسألة":
+        "اقرأ السؤال وحله خطوة بخطوة مع القوانين والنتيجة النهائية.",
+    "🔍 فحص تفاصيل":
+        "افحص الصورة بحثًا عن النصوص والأرقام والرموز والعناصر والأخطاء المرئية والتفاصيل المهمة."
+}
+
+def build_analysis_prompt(mode, language, extra):
+    return f"""
+أنت AI Reality Scanner ULTIMATE.
+اللغة: {language}
+النمط: {mode}
+
+المطلوب:
+{MODE_PROMPTS[mode]}
+
+اكتب:
+### 👁️ ماذا أرى؟
+### 🧠 التحليل
+### 📌 أهم التفاصيل
+### 🚀 ماذا أفعل الآن؟
+اذكر 3 خطوات عملية مناسبة.
+### 💡 ملاحظات
+اذكر ما هو غير واضح بدل التخمين.
+
+قواعد:
+- لا تخترع معلومات غير ظاهرة.
+- لا تدّعي معرفة هوية الأشخاص.
+- لا تدّعي تحديد الموقع الدقيق من الصورة وحدها.
+- فرّق بين المعلومة المؤكدة والاحتمال.
+
+تعليمات إضافية:
+{extra or "لا توجد."}
+"""
+
+
+# -------------------- Sidebar --------------------
 with st.sidebar:
     st.header("⚙️ إعدادات")
     language = st.selectbox(
         "لغة النتيجة",
-        ["العربية المصرية", "العربية الفصحى", "English"],
-        index=0,
+        ["العربية المصرية", "العربية الفصحى", "English"]
     )
-    mode = st.selectbox(
-        "نوع التحليل",
-        [
-            "🧠 تحليل ذكي",
-            "📝 استخراج النص OCR",
-            "🧾 فاتورة / إيصال",
-            "📄 مستند / ورقة",
-            "💻 كود برمجي",
-            "📊 رسم بياني",
-            "🧮 سؤال / مسألة",
-            "🔍 فحص تفاصيل",
-        ],
-    )
+    mode = st.selectbox("نوع التحليل", list(MODE_PROMPTS.keys()))
     extra = st.text_area(
-        "تعليمات إضافية (اختياري)",
+        "تعليمات إضافية",
         placeholder="مثال: ركز على الأسعار فقط...",
-        height=100,
+        height=100
     )
-    st.caption("🔐 المفتاح يُقرأ من GEMINI_API_KEY في Secrets.")
+    st.caption("🔐 Gemini API Key محفوظ في Secrets.")
 
-# -----------------------------
-# Upload
-# -----------------------------
+# -------------------- Upload --------------------
 st.markdown('<div class="card">', unsafe_allow_html=True)
-st.subheader("📤 1. ارفع صورة")
+st.subheader("📤 ارفع صورة")
 
 uploaded = st.file_uploader(
     "JPG / JPEG / PNG / WEBP",
     type=["jpg", "jpeg", "png", "webp"],
-    label_visibility="collapsed",
+    label_visibility="collapsed"
 )
 st.markdown(
-    '<p class="small">كلما كانت الصورة أوضح، كانت قراءة النصوص والتفاصيل أفضل.</p></div>',
-    unsafe_allow_html=True,
+    '<p class="small">ارفع صورة واضحة للحصول على أفضل قراءة.</p></div>',
+    unsafe_allow_html=True
 )
 
 if not uploaded:
     st.markdown("""
     <div class="card">
-    <h3>✨ التطبيق يقدر يعمل إيه؟</h3>
+    <h3>✨ المميزات</h3>
     <p>
-    📝 OCR للنصوص • 🧾 قراءة الفواتير • 📄 تلخيص المستندات •
-    💻 تحليل الأكواد • 📊 فهم الرسوم البيانية • 🧮 حل المسائل •
-    🔍 فحص التفاصيل • 🧠 تحليل عام
+    📝 OCR • 🧾 فواتير • 📄 مستندات • 💻 كود • 📊 رسوم بيانية •
+    🧮 مسائل • 🔍 تفاصيل • 💬 Chat مع الصورة • 📥 حفظ النتيجة
     </p>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# -----------------------------
-# Image preview
-# -----------------------------
 try:
     image = ImageOps.exif_transpose(Image.open(uploaded))
 except Exception:
-    st.error("الصورة غير صالحة أو لا يمكن قراءتها.")
+    st.error("الصورة غير صالحة.")
     st.stop()
+
+# Store image in session for chat
+st.session_state["scanner_image"] = image
 
 left, right = st.columns([1, 1], gap="large")
 
@@ -266,46 +244,96 @@ with left:
 
 with right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("⚡ 2. التحليل")
+    st.subheader("⚡ التحليل")
     st.write(f"**النمط:** {mode}")
-    if extra:
-        st.write(f"**تعليماتك:** {extra}")
-
-    analyze = st.button(
-        "🔎 حلّل الصورة الآن",
-        type="primary",
-        width="stretch",
-    )
+    analyze = st.button("🔎 حلّل الصورة الآن", type="primary", width="stretch")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -----------------------------
-# Analysis result
-# -----------------------------
+# -------------------- Analysis --------------------
 if analyze:
     with st.spinner("🤖 Gemini بيحلل الصورة..."):
-        result, error = call_gemini(image, mode, language, extra)
-
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🧠 النتيجة")
+        result, error = gemini_request(
+            image,
+            build_analysis_prompt(mode, language, extra)
+        )
 
     if error:
         st.error(error)
     else:
-        st.markdown(result)
+        st.session_state["analysis_result"] = result
+        st.session_state["chat_history"] = []
 
-        st.download_button(
-            "⬇️ حفظ النتيجة كملف TXT",
-            data=result,
-            file_name=f"ai_reality_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain",
-            width="stretch",
-        )
+# -------------------- Result --------------------
+if st.session_state.get("analysis_result"):
+    result = st.session_state["analysis_result"]
 
-        st.info("💡 تقدر تنسخ النتيجة من الصفحة أو تحفظها كملف TXT.")
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("🧠 النتيجة")
+    st.markdown(result)
+
+    st.download_button(
+        "⬇️ حفظ التحليل TXT",
+        data=result,
+        file_name=f"ai_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain",
+        width="stretch"
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # -------------------- Chat --------------------
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("💬 Chat مع الصورة")
+    st.caption("اسأل Gemini أي سؤال عن الصورة أو عن نتيجة التحليل.")
+
+    for msg in st.session_state.get("chat_history", []):
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    question = st.chat_input("مثال: إيه أهم حاجة في الصورة؟")
+
+    if question:
+        st.session_state.setdefault("chat_history", []).append(
+            {"role": "user", "content": question}
+        )
+
+        history_text = "\n".join(
+            f'{m["role"]}: {m["content"]}'
+            for m in st.session_state["chat_history"][-8:]
+        )
+
+        chat_prompt = f"""
+أنت مساعد AI Reality Scanner.
+أجب عن سؤال المستخدم اعتمادًا على الصورة الموجودة وسياق التحليل.
+
+التحليل السابق:
+{result}
+
+سجل المحادثة:
+{history_text}
+
+سؤال المستخدم:
+{question}
+
+أجب بالعربية المصرية بوضوح، ولا تخترع شيئًا غير ظاهر في الصورة.
+إذا كان السؤال يحتاج معلومة غير موجودة في الصورة، قل ذلك بوضوح.
+"""
+
+        with st.spinner("🤖 بفكر في سؤالك..."):
+            answer, error = gemini_request(image, chat_prompt)
+
+        if error:
+            answer = error
+
+        st.session_state["chat_history"].append(
+            {"role": "assistant", "content": answer}
+        )
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# -------------------- Footer --------------------
 st.markdown("""
-<div style="text-align:center;margin-top:42px;color:#64748b;">
-AI Reality Scanner PRO • Gemini Vision
+<div style="text-align:center;margin-top:45px;color:#64748b;">
+AI Reality Scanner ULTIMATE • Gemini Vision
 </div>
 """, unsafe_allow_html=True)
