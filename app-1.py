@@ -3,408 +3,349 @@ import base64
 import json
 import urllib.request
 import urllib.error
-import urllib.parse
-from io import BytesIO
-from datetime import datetime
 
 import streamlit as st
-from PIL import Image, ImageOps
+from PIL import Image
+
+# ============================================================
+# YOSEF AI TRY-ON STUDIO — Gemini Image Edition
+# ============================================================
 
 st.set_page_config(
-    page_title="AI Reality Scanner ULTIMATE",
-    page_icon="📸",
+    page_title="Yosef AI — Try-On Studio",
+    page_icon="👕",
     layout="wide",
-    initial_sidebar_state="collapsed",
 )
 
-# ============================================================
-# UI
-# ============================================================
+# -----------------------------
+# Styling
+# -----------------------------
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] {
-    background: radial-gradient(circle at 10% 5%, #172554 0, #080b16 32%, #05060b 72%);
-}
-.block-container {max-width:1200px;padding-top:1.3rem;padding-bottom:4rem;}
-.hero {padding:32px;border-radius:30px;margin-bottom:18px;
-background:linear-gradient(135deg,rgba(59,130,246,.20),rgba(168,85,247,.15));
-border:1px solid rgba(255,255,255,.10);}
-.hero h1 {font-size:3rem;margin:0 0 8px;}
-.hero p {color:#cbd5e1;font-size:1.05rem;margin:0;}
-.card {padding:20px;border-radius:22px;background:rgba(15,23,42,.74);
-border:1px solid rgba(255,255,255,.08);margin:10px 0;}
-.badge {display:inline-block;padding:6px 12px;border-radius:999px;
-background:rgba(59,130,246,.16);color:#93c5fd;font-size:.85rem;}
-.small {color:#94a3b8;font-size:.9rem;}
-.stButton>button,.stDownloadButton>button {border-radius:14px;min-height:44px;font-weight:700;}
+    .stApp {
+        background:
+            radial-gradient(circle at 15% 0%, rgba(125, 72, 255, .18), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(0, 220, 170, .12), transparent 25%),
+            #090b12;
+        color: #f7f7fb;
+    }
+    section[data-testid="stSidebar"] { background: #10131c; }
+    .hero { padding: 28px 10px 18px; text-align: center; }
+    .hero h1 { font-size: 42px; margin-bottom: 5px; font-weight: 800; }
+    .hero p { color: #a7a9b6; font-size: 16px; }
+    .card {
+        background: rgba(25, 28, 39, .78);
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 22px;
+        padding: 22px;
+        margin-bottom: 18px;
+        box-shadow: 0 15px 45px rgba(0,0,0,.20);
+    }
+    .badge {
+        display: inline-block;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgba(142, 92, 255, .16);
+        color: #cbb7ff;
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+    .small { color: #9fa3b5; font-size: 13px; }
+    div.stButton > button {
+        width: 100%;
+        border-radius: 14px;
+        min-height: 50px;
+        font-weight: 800;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="hero">
-<span class="badge">GEMINI VISION • ULTIMATE ALL-IN-ONE</span>
-<h1>📸 AI Reality Scanner</h1>
-<p>صوّر أو ارفع أي حاجة → حلّلها → اسأل عنها → ترجمها → احفظ تقريرك.</p>
-</div>
-""", unsafe_allow_html=True)
 
-# ============================================================
-# Session state
-# ============================================================
-for key, default in {
-    "history": [],
-    "analysis": "",
-    "last_source": None,
-    "chat": [],
-    "logged_in": False,
-    "username": "",
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-# ============================================================
-# Authentication (simple demo/session login)
-# ============================================================
-if not st.session_state.logged_in:
-    with st.sidebar:
-        st.header("👤 حساب تجريبي")
-        st.caption("تسجيل الدخول هنا محلي داخل جلسة Streamlit.")
-        username = st.text_input("اسم المستخدم")
-        password = st.text_input("كلمة المرور", type="password")
-        if st.button("دخول", type="primary", width="stretch"):
-            if username.strip() and password:
-                st.session_state.logged_in = True
-                st.session_state.username = username.strip()
-                st.rerun()
-            else:
-                st.error("اكتب اسم المستخدم وكلمة المرور.")
-else:
-    with st.sidebar:
-        st.success(f"مرحبًا {st.session_state.username} 👋")
-        if st.button("تسجيل خروج"):
-            st.session_state.logged_in = False
-            st.session_state.username = ""
-            st.rerun()
-
-# ============================================================
-# API
-# ============================================================
-def get_key():
-    key = os.getenv("GEMINI_API_KEY")
-    if key:
-        return key.strip()
+# -----------------------------
+# Gemini
+# -----------------------------
+def get_gemini_key():
     try:
         key = st.secrets.get("GEMINI_API_KEY")
-        return key.strip() if key else None
+        if key:
+            return str(key).strip()
     except Exception:
-        return None
+        pass
 
-def bytes_b64(data):
-    return base64.b64encode(data).decode("utf-8")
+    key = os.getenv("GEMINI_API_KEY")
+    return key.strip() if key else None
 
-def gemini_parts_request(parts, temperature=0.2, max_tokens=2400):
-    key = get_key()
-    if not key:
-        return None, "GEMINI_API_KEY غير موجود في Streamlit Secrets."
+
+def image_block(uploaded_file):
+    data = uploaded_file.getvalue()
+    encoded = base64.b64encode(data).decode("utf-8")
+    mime = uploaded_file.type or "image/jpeg"
+    return {
+        "type": "image",
+        "mime_type": mime,
+        "data": encoded,
+    }
+
+
+def try_on_with_gemini(person_file, outfit_file, style, aspect):
+    api_key = get_gemini_key()
+    if not api_key:
+        raise RuntimeError(
+            "GEMINI_API_KEY غير موجود في Streamlit Secrets."
+        )
+
+    prompt = f"""
+Create a photorealistic fashion virtual try-on image.
+
+REFERENCE ORDER:
+1. The first image is the person/model.
+2. The second image is the clothing/outfit.
+
+TASK:
+Put the exact clothing from the second image onto the person in the first image.
+
+IMPORTANT:
+- Preserve the person's face, identity, skin tone, body proportions and natural appearance.
+- Preserve the garment's color, design, pattern, material, logos and important details.
+- Make the garment fit naturally with realistic folds, shadows and lighting.
+- Do not change the person's face or hairstyle.
+- Do not add extra people.
+- Keep the result realistic, like professional fashion photography.
+- Prefer a full-body composition when possible.
+- Style: {style}.
+- Output aspect ratio: {aspect}.
+""".strip()
 
     payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens
-        }
+        "model": "gemini-3.1-flash-image",
+        "input": [
+            image_block(person_file),
+            image_block(outfit_file),
+            {"type": "text", "text": prompt},
+        ],
+        "response_format": {
+            "type": "image",
+            "aspect_ratio": aspect,
+            "image_size": "1K",
+        },
     }
-    model = "gemini-3.5-flash-lite"
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + model + ":generateContent?key=" + urllib.parse.quote(key, safe="")
-    )
+
+    body = json.dumps(payload).encode("utf-8")
+
     req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        "https://generativelanguage.googleapis.com/v1beta/interactions",
+        data=body,
+        headers={
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
+
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return None, "Gemini لم يرجع نتيجة."
-        parts_out = candidates[0].get("content", {}).get("parts", [])
-        text = "\n".join(p.get("text","") for p in parts_out if p.get("text")).strip()
-        return text or "لم يرجع Gemini نصًا.", None
+        with urllib.request.urlopen(req, timeout=180) as response:
+            raw = response.read().decode("utf-8")
+            result = json.loads(raw)
     except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8", errors="replace")
-        try:
-            msg = json.loads(raw).get("error", {}).get("message", raw)
-        except Exception:
-            msg = raw
-        return None, f"Gemini رفض الطلب: {msg}"
+        details = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini API HTTP {e.code}: {details}") from e
     except Exception as e:
-        return None, f"تعذر الاتصال بـ Gemini: {str(e)[:700]}"
+        raise RuntimeError(f"تعذر الاتصال بـ Gemini: {e}") from e
 
-def image_parts(image):
-    buf = BytesIO()
-    image.convert("RGB").save(buf, format="JPEG", quality=92)
-    return [{"inline_data": {"mime_type":"image/jpeg", "data":bytes_b64(buf.getvalue())}}]
+    # Current Interactions API normally exposes output_image directly.
+    output_image = result.get("output_image")
+    if isinstance(output_image, dict):
+        data = output_image.get("data")
+        if data:
+            return base64.b64decode(data)
 
-def file_part(uploaded):
-    return [{"inline_data": {"mime_type": uploaded.type, "data":bytes_b64(uploaded.getvalue())}}]
+    # Fallback: inspect model output steps.
+    for step in result.get("steps", []):
+        for block in step.get("content", []) or step.get("summary", []):
+            if isinstance(block, dict) and block.get("type") == "image":
+                data = block.get("data")
+                if data:
+                    return base64.b64decode(data)
 
-# ============================================================
-# Modes
-# ============================================================
-MODES = {
-    "🧠 تحليل ذكي": "حلل المحتوى بالكامل وحدد أهم المعلومات.",
-    "📝 OCR استخراج النص": "استخرج كل النص الظاهر بدقة، واكتب [غير واضح] عند عدم القدرة على القراءة.",
-    "🧾 فاتورة وإيصال": "استخرج البنود والكميات والأسعار والخصم والضريبة والإجمالي، دون اختلاق أرقام.",
-    "📄 مستند وتلخيص": "اقرأ المستند واستخرج البيانات المهمة ثم قدم ملخصًا منظمًا.",
-    "💻 تحليل كود": "اشرح الكود، الأخطاء والمشاكل الظاهرة، واقترح إصلاحات عملية.",
-    "📊 تحليل رسم بياني": "حلل المحاور والقيم والاتجاهات والمقارنات دون اختلاق أرقام.",
-    "🧮 حل مسألة": "اقرأ المسألة وحلها خطوة بخطوة مع القوانين والنتيجة النهائية.",
-    "🔍 فحص التفاصيل": "افحص التفاصيل الصغيرة والنصوص والأرقام والرموز والأخطاء المرئية.",
-    "🌍 ترجمة النص": "استخرج النص ثم ترجمه للغة المطلوبة مع الحفاظ على المعنى.",
-    "📋 تحويل لجدول": "استخرج البيانات المنظمة من الصورة وحولها إلى جدول Markdown واضح."
-}
-
-with st.sidebar:
-    st.header("⚙️ التحكم")
-    language = st.selectbox("لغة النتيجة", ["العربية المصرية","العربية الفصحى","English"])
-    mode = st.selectbox("نوع التحليل", list(MODES.keys()))
-    extra = st.text_area("تعليمات إضافية", placeholder="مثال: ركز على الأسعار فقط...")
-    target_lang = st.selectbox("لغة الترجمة", ["English","العربية","Français","Deutsch","Español"])
-    st.caption("🔐 لا تضع مفتاح API داخل الكود أو GitHub.")
-
-# ============================================================
-# Inputs — no camera widget
-# ============================================================
-st.subheader("📤 ارفع المحتوى")
-
-tab_image, tab_pdf, tab_audio = st.tabs(["🖼️ صورة", "📄 PDF", "🎙️ صوت"])
-
-source_type = None
-source_data = None
-image = None
-
-with tab_image:
-    img_upload = st.file_uploader(
-        "ارفع صورة JPG / PNG / WEBP",
-        type=["jpg", "jpeg", "png", "webp"],
-        key="image_upload"
+    raise RuntimeError(
+        "Gemini رجّع استجابة بدون صورة. جرّب مرة أخرى، ولو ظهر نفس الخطأ ابعتلي نص الخطأ."
     )
-    if img_upload:
-        source_type = "image"
-        source_data = img_upload
-        image = ImageOps.exif_transpose(Image.open(img_upload))
 
-with tab_pdf:
-    pdf_upload = st.file_uploader(
-        "ارفع ملف PDF",
-        type=["pdf"],
-        key="pdf_upload"
-    )
-    if pdf_upload:
-        source_type = "pdf"
-        source_data = pdf_upload
-        st.info("سيتم إرسال ملف PDF إلى Gemini لتحليله.")
 
-with tab_audio:
-    audio_upload = st.file_uploader(
-        "ارفع تسجيلًا صوتيًا",
-        type=["wav", "mp3", "m4a", "aac", "ogg"],
-        key="audio_upload"
-    )
-    if audio_upload:
-        source_type = "audio"
-        source_data = audio_upload
-        st.info("سيحاول Gemini فهم الكلام من التسجيل.")
-
-# ============================================================
-# Analyze
-# ============================================================
-if source_type:
-    if image:
-        st.image(image, caption="المصدر", width="stretch")
-
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🚀 التحليل")
-    analyze = st.button("🔎 ابدأ التحليل", type="primary", width="stretch")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if analyze:
-        base_prompt = f"""
-أنت AI Reality Scanner ULTIMATE.
-النمط: {mode}
-اللغة: {language}
-
-المطلوب:
-{MODES[mode]}
-
-قواعد:
-- لا تخترع معلومات.
-- إذا كان شيء غير واضح قل غير واضح.
-- لا تدّعي هوية الأشخاص.
-- لا تدّعي تحديد موقع دقيق من الصورة وحدها.
-- اجعل النتيجة عملية ومنظمة.
-
-اكتب:
-### 👁️ ماذا أرى؟
-### 🧠 التحليل
-### 📌 أهم التفاصيل
-### 🚀 ماذا أفعل الآن؟
-### 💡 ملاحظات
-
-تعليمات إضافية:
-{extra or "لا توجد."}
-"""
-
-        if mode == "🌍 ترجمة النص":
-            base_prompt += f"\nترجم النص المستخرج إلى: {target_lang}."
-
-        if mode == "📋 تحويل لجدول":
-            base_prompt += "\nاستخدم جدول Markdown عند وجود بيانات منظمة."
-
-        if source_type == "image":
-            parts = [{"text": base_prompt}] + image_parts(image)
-        elif source_type == "pdf":
-            parts = [{"text": base_prompt + "\nحلل ملف PDF كاملًا، واذكر الصفحات أو الأقسام عندما يكون ذلك ممكنًا."}] + file_part(source_data)
-        else:
-            parts = [{
-                "text": base_prompt + "\nهذا تسجيل صوتي. استخرج الكلام المهم ثم حلله حسب النمط."
-            }, {
-                "inline_data": {
-                    "mime_type": source_data.type,
-                    "data": bytes_b64(source_data.getvalue())
-                }
-            }]
-
-        with st.spinner("🤖 جاري التحليل..."):
-            result, error = gemini_parts_request(parts)
-
-        if error:
-            st.error(error)
-        else:
-            st.session_state.analysis = result
-            st.session_state.last_source = source_type
-            st.session_state.chat = []
-            st.session_state.history.insert(0, {
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "mode": mode,
-                "type": source_type,
-                "result": result
-            })
-            st.session_state.history = st.session_state.history[:20]
-
-# ============================================================
-# Result
-# ============================================================
-if st.session_state.analysis:
-    result = st.session_state.analysis
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🧠 النتيجة")
-    st.markdown(result)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            "⬇️ حفظ TXT",
-            data=result,
-            file_name=f"ai_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain",
-            width="stretch"
-        )
-    with col2:
-        # Browser print is more reliable than a PDF dependency in Streamlit.
-        st.download_button(
-            "📥 حفظ تقرير Markdown",
-            data=f"# AI Reality Scanner Report\n\n{result}",
-            file_name="ai_reality_scanner_report.md",
-            mime="text/markdown",
-            width="stretch"
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Translation of the existing result
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🌍 ترجمة النتيجة")
-    if st.button("ترجم النتيجة", width="stretch"):
-        trans_prompt = f"ترجم النص التالي إلى {target_lang} بدقة، مع الحفاظ على التنسيق والمعنى:\n\n{result}"
-        translated, error = gemini_parts_request([{"text": trans_prompt}], temperature=0.1)
-        if error:
-            st.error(error)
-        else:
-            st.markdown(translated)
-            st.download_button(
-                "⬇️ حفظ الترجمة",
-                data=translated,
-                file_name="translated_result.txt",
-                mime="text/plain"
-            )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Chat
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("💬 Chat مع نفس المحتوى")
-    for msg in st.session_state.chat:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    q = st.chat_input("اسأل عن الصورة أو الـPDF أو النتيجة...")
-    if q:
-        st.session_state.chat.append({"role":"user","content":q})
-        context = "\n".join(
-            f'{m["role"]}: {m["content"]}'
-            for m in st.session_state.chat[-8:]
-        )
-        prompt = f"""
-أنت مساعد AI Reality Scanner.
-المحتوى الذي تم تحليله:
-{result}
-
-المحادثة:
-{context}
-
-أجب عن سؤال المستخدم اعتمادًا على المحتوى المتاح فقط.
-إذا لم توجد المعلومة قل ذلك بوضوح.
-سؤال المستخدم: {q}
-"""
-        # Chat can reuse the original image when available.
-        parts = [{"text": prompt}]
-        if image is not None:
-            parts += image_parts(image)
-        with st.spinner("🤖 بجهز الإجابة..."):
-            answer, error = gemini_parts_request(parts)
-        answer = answer if not error else error
-        st.session_state.chat.append({"role":"assistant","content":answer})
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ============================================================
-# History / share
-# ============================================================
-with st.expander("🗂️ سجل التحليلات"):
-    if not st.session_state.history:
-        st.write("لسه مفيش تحليلات محفوظة في الجلسة.")
-    else:
-        for i, item in enumerate(st.session_state.history):
-            st.markdown(f"**{i+1}. {item['time']} — {item['mode']} — {item['type']}**")
-            st.text(item["result"][:500] + ("..." if len(item["result"]) > 500 else ""))
-            st.download_button(
-                "⬇️ تنزيل",
-                data=item["result"],
-                file_name=f"scan_history_{i+1}.txt",
-                mime="text/plain",
-                key=f"hist_{i}"
-            )
-
-with st.expander("🔗 مشاركة النتيجة"):
-    st.caption("تقدر تستخدم زر المشاركة في المتصفح أو تنسخ النتيجة. سجل التحليلات هنا محفوظ داخل جلسة التطبيق فقط.")
-    if st.session_state.analysis:
-        st.code(st.session_state.analysis[:3000], language="markdown")
-
+# -----------------------------
+# Header
+# -----------------------------
 st.markdown("""
-<div style="text-align:center;margin-top:45px;color:#64748b;">
-AI Reality Scanner ULTIMATE ALL-IN-ONE • Gemini Vision
+<div class="hero">
+    <div class="badge">🍌 GEMINI AI FASHION TRY-ON</div>
+    <h1>YOSEF AI — TRY-ON STUDIO</h1>
+    <p>ارفع صورة الشخص + صورة اللبس، وخلي Gemini يعمل تجربة اللبس بالـAI.</p>
 </div>
 """, unsafe_allow_html=True)
+
+
+# -----------------------------
+# Sidebar
+# -----------------------------
+with st.sidebar:
+    st.markdown("## ⚙️ إعدادات التجربة")
+
+    mode = st.radio(
+        "نوع التجربة",
+        ["📸 صورة", "🎬 فيديو"],
+        index=0,
+    )
+
+    style = st.selectbox(
+        "ستايل النتيجة",
+        [
+            "Natural / Realistic",
+            "Studio Fashion",
+            "Streetwear",
+            "Luxury Fashion",
+            "E-commerce",
+        ],
+    )
+
+    ratio = st.selectbox(
+        "نسبة العرض",
+        [
+            "9:16 — Reels",
+            "1:1 — Square",
+            "4:5 — Instagram",
+            "16:9 — Landscape",
+        ],
+    )
+
+    st.markdown("---")
+    st.markdown("### 🔐 AI")
+
+    if get_gemini_key():
+        st.success("Gemini API متصل")
+    else:
+        st.warning("أضف GEMINI_API_KEY في Streamlit Secrets.")
+
+    st.markdown(
+        '<div class="small">المفتاح لا يتم وضعه داخل app.py.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if mode == "🎬 فيديو":
+        st.info(
+            "نسخة Gemini الحالية تعمل على تجربة الملابس بالصور. "
+            "الفيديو سنضيفه لاحقًا بمحرك فيديو مناسب."
+        )
+
+
+# -----------------------------
+# Inputs
+# -----------------------------
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown("### 👤 1 — صورة الشخص")
+person_file = st.file_uploader(
+    "ارفع صورة واضحة للشخص",
+    type=["jpg", "jpeg", "png", "webp"],
+    key="person",
+)
+st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown("### 👕 2 — صورة اللبس")
+outfit_file = st.file_uploader(
+    "ارفع صورة واضحة للملابس / اللوك",
+    type=["jpg", "jpeg", "png", "webp"],
+    key="outfit",
+)
+st.markdown("</div>", unsafe_allow_html=True)
+
+
+# Preview
+if person_file or outfit_file:
+    cols = st.columns(2)
+
+    if person_file:
+        with cols[0]:
+            st.markdown("**👤 الشخص**")
+            st.image(person_file, use_container_width=True)
+
+    if outfit_file:
+        with cols[1]:
+            st.markdown("**👕 اللبس**")
+            st.image(outfit_file, use_container_width=True)
+
+
+# -----------------------------
+# Generate
+# -----------------------------
+st.markdown('<div class="card">', unsafe_allow_html=True)
+
+if mode == "📸 صورة":
+    if st.button("✨ جرّب اللبس بالـAI", type="primary", use_container_width=True):
+
+        if not get_gemini_key():
+            st.error("مفتاح Gemini غير موجود في Streamlit Secrets.")
+            st.stop()
+
+        if not person_file:
+            st.error("ارفع صورة الشخص أولًا.")
+            st.stop()
+
+        if not outfit_file:
+            st.error("ارفع صورة اللبس أولًا.")
+            st.stop()
+
+        ratio_map = {
+            "9:16 — Reels": "9:16",
+            "1:1 — Square": "1:1",
+            "4:5 — Instagram": "4:5",
+            "16:9 — Landscape": "16:9",
+        }
+        aspect = ratio_map.get(ratio, "9:16")
+
+        progress = st.progress(0)
+        status = st.empty()
+
+        try:
+            status.info("📤 جاري تجهيز الصور...")
+            progress.progress(15)
+
+            status.info("🧠 Gemini بيعمل الـAI Try-On...")
+            progress.progress(35)
+
+            result_bytes = try_on_with_gemini(
+                person_file,
+                outfit_file,
+                style,
+                aspect,
+            )
+
+            progress.progress(90)
+            status.success("✅ النتيجة جاهزة!")
+            progress.progress(100)
+
+            st.markdown("## ✨ النتيجة")
+
+            result_image = Image.open(__import__("io").BytesIO(result_bytes))
+            st.image(result_image, use_container_width=True)
+
+            st.download_button(
+                "⬇️ حفظ الصورة",
+                data=result_bytes,
+                file_name="yosef_ai_tryon.png",
+                mime="image/png",
+                use_container_width=True,
+            )
+
+        except Exception as e:
+            st.error("حصل خطأ أثناء تنفيذ Gemini AI.")
+            st.code(str(e))
+
+else:
+    st.info("اختار 📸 صورة للتجربة الحالية.")
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+st.caption(
+    "Powered by Google Gemini API • لا تضع مفاتيح API داخل GitHub أو داخل الكود."
+)
