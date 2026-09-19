@@ -177,25 +177,20 @@ with st.sidebar:
     st.caption("🔐 لا تضع مفتاح API داخل الكود أو GitHub.")
 
 # ============================================================
-# Input tabs: camera / image / PDF / audio
+# Inputs — no camera widget
 # ============================================================
-tabs = st.tabs(["📸 كاميرا","🖼️ صورة","📄 PDF","🎙️ صوت"])
+st.subheader("📤 ارفع المحتوى")
+
+tab_image, tab_pdf, tab_audio = st.tabs(["🖼️ صورة", "📄 PDF", "🎙️ صوت"])
 
 source_type = None
 source_data = None
 image = None
 
-with tabs[0]:
-    camera = st.camera_input("صوّر الآن")
-    if camera:
-        source_type = "image"
-        source_data = camera
-        image = ImageOps.exif_transpose(Image.open(camera))
-
-with tabs[1]:
+with tab_image:
     img_upload = st.file_uploader(
         "ارفع صورة JPG / PNG / WEBP",
-        type=["jpg","jpeg","png","webp"],
+        type=["jpg", "jpeg", "png", "webp"],
         key="image_upload"
     )
     if img_upload:
@@ -203,7 +198,7 @@ with tabs[1]:
         source_data = img_upload
         image = ImageOps.exif_transpose(Image.open(img_upload))
 
-with tabs[2]:
+with tab_pdf:
     pdf_upload = st.file_uploader(
         "ارفع ملف PDF",
         type=["pdf"],
@@ -214,10 +209,10 @@ with tabs[2]:
         source_data = pdf_upload
         st.info("سيتم إرسال ملف PDF إلى Gemini لتحليله.")
 
-with tabs[3]:
+with tab_audio:
     audio_upload = st.file_uploader(
         "ارفع تسجيلًا صوتيًا",
-        type=["wav","mp3","m4a","aac","ogg"],
+        type=["wav", "mp3", "m4a", "aac", "ogg"],
         key="audio_upload"
     )
     if audio_upload:
