@@ -1,4 +1,8 @@
 import os
+import base64
+import json
+import urllib.request
+import urllib.error
 from io import BytesIO
 
 import streamlit as st
@@ -16,104 +20,96 @@ st.markdown("""
 [data-testid="stAppViewContainer"] {
     background: radial-gradient(circle at 15% 10%, #172554 0, #080b16 32%, #05060b 72%);
 }
-.block-container {max-width: 1100px; padding-top: 2rem; padding-bottom: 3rem;}
-.hero {
-    padding: 32px; border-radius: 28px; margin-bottom: 22px;
-    background: linear-gradient(135deg, rgba(59,130,246,.18), rgba(168,85,247,.14));
-    border: 1px solid rgba(255,255,255,.10);
-}
-.hero h1 {font-size: 3rem; margin: 0; letter-spacing:-1px;}
-.hero p {color:#cbd5e1; font-size:1.08rem;}
-.card {
-    padding: 22px; border-radius: 22px; background: rgba(15,23,42,.72);
-    border:1px solid rgba(255,255,255,.08); margin:10px 0;
-}
-.badge {display:inline-block; padding:6px 12px; border-radius:999px;
-    background:rgba(59,130,246,.16); color:#93c5fd; font-size:.85rem;}
-.small {color:#94a3b8; font-size:.9rem;}
-.stButton>button {border-radius:14px; min-height:48px; font-weight:700;}
+.block-container {max-width:1100px;padding-top:2rem;padding-bottom:3rem;}
+.hero{padding:32px;border-radius:28px;margin-bottom:22px;background:linear-gradient(135deg,rgba(59,130,246,.18),rgba(168,85,247,.14));border:1px solid rgba(255,255,255,.10);}
+.hero h1{font-size:3rem;margin:0;}
+.hero p{color:#cbd5e1;font-size:1.08rem;}
+.card{padding:22px;border-radius:22px;background:rgba(15,23,42,.72);border:1px solid rgba(255,255,255,.08);margin:10px 0;}
+.badge{display:inline-block;padding:6px 12px;border-radius:999px;background:rgba(59,130,246,.16);color:#93c5fd;font-size:.85rem;}
+.small{color:#94a3b8;font-size:.9rem;}
+.stButton>button{border-radius:14px;min-height:48px;font-weight:700;}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class="hero">
-  <span class="badge">GEMINI VISION • MULTI-PURPOSE</span>
-  <h1>📸 AI Reality Scanner</h1>
-  <p>صوّر أي حاجة. التطبيق يحاول يفهم الصورة، يحدد نوع المحتوى، ويقدّم لك تحليلًا عمليًا.</p>
+<span class="badge">GEMINI VISION</span>
+<h1>📸 AI Reality Scanner</h1>
+<p>صوّر أي حاجة — والذكاء الاصطناعي يفهمها ويحللها.</p>
 </div>
 """, unsafe_allow_html=True)
 
-
-def get_secret(name):
+def get_key():
+    key = os.getenv("GEMINI_API_KEY")
+    if key:
+        return key
     try:
-        return st.secrets.get(name)
+        return st.secrets.get("GEMINI_API_KEY")
     except Exception:
         return None
 
-
-def local_fallback():
-    return """### 🔎 وضع العرض
-تم استقبال الصورة بنجاح، لكن محرك Gemini غير متصل حاليًا.
-
-أضف `GEMINI_API_KEY` في Streamlit Secrets ثم أعد تشغيل التطبيق."""
-
-
 def analyze_with_gemini(image):
-    from google import genai
-    from google.genai import types
+    api_key = get_key()
+    if not api_key:
+        return "مفتاح Gemini غير موجود في Secrets.", "missing"
 
-    key = os.getenv("GEMINI_API_KEY") or get_secret("GEMINI_API_KEY")
-    if not key:
-        return None, "missing"
-
-    prompt = """أنت AI Reality Scanner.
-حلل الصورة بالعربية المصرية الواضحة، بدون اختلاق معلومات.
-ابدأ بـ:
+    prompt = """حلل الصورة بالعربية المصرية الواضحة وبدون اختلاق معلومات.
+اكتب:
 ### 👁️ ماذا أرى؟
-ثم:
 ### 🧠 التحليل
-ثم:
 ### 📌 أهم التفاصيل
-ثم:
 ### 🚀 ماذا أستطيع أن أفعل لك؟
-اقترح 3 إجراءات مناسبة حسب نوع الصورة.
+إذا كانت فاتورة استخرج البنود والأسعار والإجمالي الظاهر.
+إذا كانت ورقة اقرأ النص الظاهر ولخصه.
+إذا كانت مسألة اشرح الحل خطوة بخطوة.
+إذا كان كودًا اذكر الأخطاء الظاهرة والإصلاح.
+إذا كان رسمًا بيانيًا اشرح الاتجاهات والأرقام الواضحة.
+إذا كانت صورة عامة صف أهم العناصر.
+إذا كانت معلومة غير واضحة قل إنها غير واضحة."""
 
-إذا كانت فاتورة: استخرج البنود والأسعار والإجمالي الظاهر، ونبّه إذا كان شيء غير واضح.
-إذا كانت ورقة/مستند: اقرأ النص الظاهر ولخصه.
-إذا كانت مسألة: اشرح الحل خطوة بخطوة.
-إذا كان كودًا: حدد الأخطاء الظاهرة واقترح الإصلاح.
-إذا كان رسمًا بيانيًا: استخرج الاتجاهات والأرقام الواضحة.
-إذا كانت صورة عامة: صف العناصر المهمة.
+    buf = BytesIO()
+    image.convert("RGB").save(buf, format="JPEG", quality=90)
+    image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-مهم: لا تدّعي التعرف المؤكد على هوية الأشخاص أو أماكنهم. وإذا كانت المعلومة غير واضحة قل "غير واضح"."""
+    body = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}}
+            ]
+        }]
+    }
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-2.5-flash-lite:generateContent?key=" + api_key
+    )
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
 
     try:
-        buf = BytesIO()
-        image.convert("RGB").save(buf, format="JPEG", quality=90)
-        image_part = types.Part.from_bytes(
-            data=buf.getvalue(),
-            mime_type="image/jpeg",
-        )
+        with urllib.request.urlopen(req, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
 
-        client = genai.Client(api_key=key)
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=[prompt, image_part],
-        )
-
-        text = getattr(response, "text", None)
-        if not text:
-            return "لم يرجع Gemini نصًا للتحليل.", "error"
-
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
         return text, "ok"
 
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        try:
+            err = json.loads(raw)
+            msg = err.get("error", {}).get("message", raw)
+        except Exception:
+            msg = raw
+        return f"Gemini رفض الطلب: {msg}", "error"
+
     except Exception as e:
-        return (
-            f"تعذر إكمال التحليل حاليًا.\n\n"
-            f"تفاصيل تقنية: `{str(e)[:500]}`",
-            "error",
-        )
+        return f"تعذر الاتصال بـ Gemini: {str(e)[:500]}", "error"
 
 
 st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -123,58 +119,38 @@ uploaded = st.file_uploader(
     type=["jpg", "jpeg", "png", "webp"],
     label_visibility="collapsed",
 )
-st.markdown(
-    '<p class="small">يفضل صورة واضحة وبإضاءة جيدة للحصول على نتائج أفضل.</p></div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<p class="small">ارفع صورة واضحة للحصول على تحليل أفضل.</p></div>', unsafe_allow_html=True)
 
 if uploaded:
-    image = Image.open(uploaded)
-    image = ImageOps.exif_transpose(image)
+    image = ImageOps.exif_transpose(Image.open(uploaded))
 
     left, right = st.columns([1, 1], gap="large")
-
     with left:
         st.image(image, caption="الصورة", width="stretch")
 
     with right:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("⚡ 2. ابدأ التحليل")
-        st.write("سيختار التطبيق أسلوب التحليل المناسب تلقائيًا.")
-        analyze = st.button(
-            "🔎 حلّل الصورة الآن",
-            type="primary",
-            width="stretch",
-        )
+        analyze = st.button("🔎 حلّل الصورة الآن", type="primary", width="stretch")
         st.markdown("</div>", unsafe_allow_html=True)
 
         if analyze:
-            with st.spinner("🤖 جاري تحليل الصورة باستخدام Gemini..."):
+            with st.spinner("🤖 جاري التحليل باستخدام Gemini..."):
                 result, status = analyze_with_gemini(image)
 
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.subheader("🧠 النتيجة")
-
             if status == "missing":
-                st.warning(
-                    "محرك Gemini غير متصل. أضف GEMINI_API_KEY في Secrets."
-                )
-                st.markdown(local_fallback())
+                st.warning(result)
             else:
                 st.markdown(result)
-
             st.markdown("</div>", unsafe_allow_html=True)
-
 else:
     st.markdown("""
     <div class="card">
-    <h3>✨ أمثلة للاستخدام</h3>
-    <p>🧾 فاتورة &nbsp; • &nbsp; 📄 مستند &nbsp; • &nbsp; 📊 رسم بياني &nbsp; • &nbsp; 💻 كود &nbsp; • &nbsp; 📝 سؤال &nbsp; • &nbsp; 🖼️ صورة عامة</p>
+    <h3>✨ أمثلة</h3>
+    <p>🧾 فاتورة • 📄 مستند • 📊 رسم بياني • 💻 كود • 📝 سؤال • 🖼️ صورة عامة</p>
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("""
-<div style="text-align:center;margin-top:40px;color:#64748b;">
-AI Reality Scanner • Gemini-powered portfolio prototype
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;margin-top:40px;color:#64748b;">AI Reality Scanner • Gemini Vision</div>', unsafe_allow_html=True)
